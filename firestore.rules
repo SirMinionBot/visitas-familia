@@ -25,13 +25,11 @@ service cloud.firestore {
     function esListaDeStrings(l, max) {
       // Validación sin comprensiones: el motor de reglas (versión compatible con
       // la implementación actual) no soporta [for (... if ...) ...]. Recorremos
-      // con un bucle clásico.
+      // con un bucle clásico. Acepta lista vacía (es el estado inicial de
+      // onesignal_player_ids al crear un usuario nuevo).
       return l is list
         && l.size() <= max
-        && l.size() > 0
-        && l[0] is string
-        && l[0].size() > 0
-        && l[0].size() < 200
+        && (l.size() < 1 || (l[0] is string && l[0].size() > 0 && l[0].size() < 200))
         && (l.size() < 2 || (l[1] is string && l[1].size() > 0 && l[1].size() < 200))
         && (l.size() < 3 || (l[2] is string && l[2].size() > 0 && l[2].size() < 200))
         && (l.size() < 4 || (l[3] is string && l[3].size() > 0 && l[3].size() < 200))
