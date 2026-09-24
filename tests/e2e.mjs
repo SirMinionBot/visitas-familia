@@ -27,7 +27,7 @@ async function main() {
   console.log(`Tests E2E contra ${APP_URL}`)
   console.log(`Run ID: ${RUN_ID}\n`)
 
-  const browser = await chromium.launch({ headless: true })
+  const browser = await chromium.launch({ headless: true, channel: 'chrome' })
   const ctx = await browser.newContext({
     viewport: { width: 1280, height: 900 },
     timezoneId: 'Europe/Madrid',
@@ -96,6 +96,9 @@ async function main() {
 
   // ============== TEST 5: Crear un turno desde el calendario ==============
   console.log('\nTEST 5: Crear turno desde el calendario')
+  // Nos vamos a una semana lejana (~6 meses) para que la celda esté siempre vacía
+  // aunque queden residuos de ejecuciones anteriores; el test borra lo que crea.
+  for (let i = 0; i < 26; i++) await page.click('[data-testid="semana-siguiente"]')
   // Vamos a la semana actual y seleccionamos una celda que sepamos que existe.
   // Para que sea determinista, localizamos la primera celda del miércoles a las 10:00.
   // Calculamos el lunes de esta semana en formato YYYY-MM-DD con timezone Madrid.
@@ -128,6 +131,8 @@ async function main() {
   const targetTestId = allCeldas[idxGlobal]
   console.log(`    target celda: ${targetTestId} (idx=${idxGlobal})`)
 
+  const previos = await page.locator(`[data-testid="${targetTestId}"] [data-testid^="turno-"]`).count()
+  check('celda destino vacía antes de crear', previos === 0, `${previos} turno(s) previos`)
   await page.locator(`[data-testid="${targetTestId}"]`).click()
   await page.waitForSelector('[data-testid="modal"]', { timeout: 5000 })
   check('modal de creación se abre', true)
@@ -173,6 +178,16 @@ async function main() {
     .count()
   check('turno visible en la celda', turnosEnCelda >= 1, `${turnosEnCelda} turno(s) en celda ${targetTestId}`)
 
+  // Limpieza: borramos por la UI el turno que hemos creado (el calendario vuelve a la
+  // semana actual al cambiar de pestaña, así que hay que hacerlo antes).
+  await page.locator(`[data-testid="${targetTestId}"] [data-testid^="turno-"]`).first().click()
+  await page.waitForSelector('[data-testid="modal-eliminar"]', { timeout: 5000 })
+  await page.click('[data-testid="modal-eliminar"]')
+  await page.waitForSelector('[data-testid="modal"]', { state: 'detached', timeout: 5000 })
+  await page.waitForTimeout(1500)
+  const turnosTrasBorrar = await page.locator(`[data-testid="${targetTestId}"] [data-testid^="turno-"]`).count()
+  check('turno se elimina desde el modal', turnosTrasBorrar === 0, `${turnosTrasBorrar} restantes`)
+
   // ============== TEST 7: Crear nota-alerta ==============
   console.log('\nTEST 7: Crear nota-alerta')
   await page.click('[data-testid="tab-notas"]')
@@ -189,6 +204,12 @@ async function main() {
     .locator('text=ALERTA')
     .count()
   check('chip ALERTA visible', tieneAlerta >= 1)
+
+  // Limpieza: borramos la nota creada en este run.
+  const notaRun = page.locator(`[data-testid^="nota-"]:has-text("${RUN_ID}")`)
+  for (const btn of await notaRun.locator('[data-testid^="btn-borrar-nota-"]').all()) await btn.click()
+  await page.waitForTimeout(1500)
+  check('nota se elimina', (await notaRun.count()) === 0)
 
   // ============== RESUMEN Y LOGS ==============
   console.log('\n=== TODOS LOS LOGS DEL NAVEGADOR ===')
