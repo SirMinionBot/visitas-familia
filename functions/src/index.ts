@@ -165,6 +165,7 @@ export const turnosWritten = onDocumentWritten(
       const quien = usuarios.get(despues.creado_por ?? '')?.nombre ?? 'Un familiar'
       await enviar(cred, {
         subscriptionIds: destinatarios,
+        clave: `${event.id}-aviso`,
         titulo: antes ? 'Turno modificado' : 'Nuevo turno de visita',
         cuerpo: antes
           ? `${cuando}${nombres ? ` · ${nombres}` : ''}`
@@ -178,17 +179,23 @@ export const turnosWritten = onDocumentWritten(
     // 2) Recordatorio: se anula el anterior (si lo hay) y se programa uno nuevo.
     try {
       await cancelarRecordatorio(cred, tid)
-      const inicio = Date.parse(despues.fecha_inicio ?? '')
+      // Si llegaron dos ediciones seguidas, se programa a partir del estado actual del
+      // turno (y no del de este evento); si ya no existe, no queda recordatorio.
+      const actualSnap = await db.collection('turnos').doc(tid).get()
+      if (!actualSnap.exists) return
+      const actual = actualSnap.data() as TurnoDoc
+      const inicio = Date.parse(actual.fecha_inicio ?? '')
       if (Number.isNaN(inicio)) {
-        logger.warn('fecha_inicio no válida, no se programa recordatorio', { tid, valor: despues.fecha_inicio })
+        logger.warn('fecha_inicio no válida, no se programa recordatorio', { tid, valor: actual.fecha_inicio })
         return
       }
       const enviarEn = new Date(inicio - ANTELACION_MS)
       if (enviarEn.getTime() <= Date.now() + 60_000) return // ya falta menos de 30 min (o pasó)
       const id = await enviar(cred, {
-        subscriptionIds: suscripcionesDe(usuarios, participantes),
+        subscriptionIds: suscripcionesDe(usuarios, listaUids(actual)),
+        clave: `${event.id}-recordatorio`,
         titulo: 'Tu turno empieza pronto',
-        cuerpo: `Empieza a las ${horaLegible(despues.fecha_inicio)} (en 30 minutos).`,
+        cuerpo: `Empieza a las ${horaLegible(actual.fecha_inicio)} (en 30 minutos).`,
         url: URL_APP,
         enviarEn,
       })
@@ -196,7 +203,7 @@ export const turnosWritten = onDocumentWritten(
         await refRecordatorio(tid).set({
           onesignal_id: id,
           enviar_en: enviarEn.toISOString(),
-          fecha_inicio: despues.fecha_inicio,
+          fecha_inicio: actual.fecha_inicio,
         })
       }
     } catch (e) {
@@ -221,6 +228,7 @@ export const notasCreated = onDocumentCreated(
           usuarios,
           [...usuarios.keys()].filter((u) => u !== autor),
         ),
+        clave: `${event.id}-alerta`,
         titulo: `Alerta de ${usuarios.get(autor)?.nombre ?? 'un familiar'}`,
         cuerpo: texto.length > 120 ? `${texto.slice(0, 117)}...` : texto,
         url: URL_APP,

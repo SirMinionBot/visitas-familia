@@ -17,7 +17,8 @@ Limitaciones conocidas:
 
 - Sin autenticación no se sabe quién edita un turno, por eso en las ediciones el editor también puede recibir el aviso.
 - Si dos personas comparten un mismo dispositivo y usan "Cambiar de usuario", el dispositivo queda vinculado a ambas.
-- Las funciones no reintentan: si OneSignal falla, el error queda en los logs y no se duplican avisos.
+- Las funciones no reintentan el evento: si OneSignal falla, el error queda en los logs. Cada envío lleva un `idempotency_key` derivado del id del evento, así que una reentrega no duplica avisos.
+- Si dos ediciones del mismo turno se procesan exactamente a la vez, podría quedar un recordatorio duplicado o huérfano (caso muy raro en uso familiar).
 - Las reglas limitan `onesignal_player_ids` a 10 ids por usuario. Si alguien reinstala la app muchas veces, hay que limpiar la lista a mano en la consola.
 - iPhone/iPad: solo funciona con iOS 16.4 o superior y con la PWA **añadida a la pantalla de inicio** (Compartir, "Añadir a pantalla de inicio"). En Safari normal no aparece el permiso.
 
