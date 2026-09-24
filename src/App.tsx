@@ -82,14 +82,17 @@ function App() {
 
   useEffect(() => {
     let montado = true
+    let unsubUsuarios: (() => void) | null = null
+
     void (async () => {
       try {
         const dl = await getDataLayer()
         if (!montado) return
         setData(dl)
-        // Suscripción a la lista de usuarios para el dropdown.
-        const unsub = dl.onUsuariosChange((lista) => {
-          setUsuarios(lista)
+        // Suscripción a la lista de usuarios. La guardamos en la closure
+        // del useEffect para poder desuscribirnos en el cleanup.
+        unsubUsuarios = dl.onUsuariosChange((lista) => {
+          if (montado) setUsuarios(lista)
         })
         // Restaurar identidad desde localStorage si existe.
         const id = localStorage.getItem(STORAGE_KEYS.usuarioId)
@@ -108,15 +111,16 @@ function App() {
         } else {
           await initOneSignal()
         }
-        return unsub
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e))
+        if (montado) setError(e instanceof Error ? e.message : String(e))
       } finally {
         if (montado) setRestaurando(false)
       }
     })()
+
     return () => {
       montado = false
+      if (unsubUsuarios) unsubUsuarios()
     }
   }, [])
 
