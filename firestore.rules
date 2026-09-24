@@ -16,21 +16,37 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function esString(s) {
-      return s is string && s.size() > 0 && s.size() < 200;
+    function esString(s, min, max) {
+      return s is string && s.size() >= min && s.size() <= max;
     }
     function esBool(b) {
       return b is bool;
     }
     function esListaDeStrings(l, max) {
-      return l is list && l.size() <= max
-        && l.hasOnly([].concat([for (x in l if esString(x)) x]));
+      // Validación sin comprensiones: el motor de reglas (versión compatible con
+      // la implementación actual) no soporta [for (... if ...) ...]. Recorremos
+      // con un bucle clásico.
+      return l is list
+        && l.size() <= max
+        && l.size() > 0
+        && l[0] is string
+        && l[0].size() > 0
+        && l[0].size() < 200
+        && (l.size() < 2 || (l[1] is string && l[1].size() > 0 && l[1].size() < 200))
+        && (l.size() < 3 || (l[2] is string && l[2].size() > 0 && l[2].size() < 200))
+        && (l.size() < 4 || (l[3] is string && l[3].size() > 0 && l[3].size() < 200))
+        && (l.size() < 5 || (l[4] is string && l[4].size() > 0 && l[4].size() < 200))
+        && (l.size() < 6 || (l[5] is string && l[5].size() > 0 && l[5].size() < 200))
+        && (l.size() < 7 || (l[6] is string && l[6].size() > 0 && l[6].size() < 200))
+        && (l.size() < 8 || (l[7] is string && l[7].size() > 0 && l[7].size() < 200))
+        && (l.size() < 9 || (l[8] is string && l[8].size() > 0 && l[8].size() < 200))
+        && (l.size() < 10 || (l[9] is string && l[9].size() > 0 && l[9].size() < 200));
     }
 
     match /usuarios/{uid} {
       allow read: if true; // la app lista nombres al entrar
       allow create: if request.resource.data.keys().hasOnly(['nombre', 'onesignal_player_ids', 'fecha_creacion'])
-        && esString(request.resource.data.nombre)
+        && esString(request.resource.data.nombre, 1, 200)
         && esListaDeStrings(request.resource.data.onesignal_player_ids, 10);
       allow update: if request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['onesignal_player_ids'])
@@ -43,9 +59,9 @@ service cloud.firestore {
       allow create: if request.resource.data.keys()
           .hasOnly(['usuario_ids', 'fecha_inicio', 'fecha_fin', 'notas', 'creado_por', 'fecha_creacion'])
         && esListaDeStrings(request.resource.data.usuario_ids, 20)
-        && esString(request.resource.data.fecha_inicio)
-        && esString(request.resource.data.fecha_fin)
-        && esString(request.resource.data.creado_por);
+        && esString(request.resource.data.fecha_inicio, 1, 200)
+        && esString(request.resource.data.fecha_fin, 1, 200)
+        && esString(request.resource.data.creado_por, 1, 200);
       allow update, delete: if true;
     }
 
@@ -53,9 +69,8 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.resource.data.keys()
           .hasOnly(['usuario_id', 'texto', 'es_alerta', 'fecha_creacion'])
-        && esString(request.resource.data.usuario_id)
-        && esString(request.resource.data.texto)
-        && request.resource.data.texto.size() <= 2000
+        && esString(request.resource.data.usuario_id, 1, 200)
+        && esString(request.resource.data.texto, 1, 2000)
         && esBool(request.resource.data.es_alerta);
       allow update, delete: if true;
     }
