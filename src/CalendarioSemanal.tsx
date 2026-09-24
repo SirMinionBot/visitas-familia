@@ -271,12 +271,21 @@ function ModalFormulario({
 
   async function guardar() {
     if (!inicio || !fin) return
-    const payload = {
+    const notasTrim = notas.trim()
+    const payload: {
+      usuario_ids: string[]
+      fecha_inicio: string
+      fecha_fin: string
+      creado_por: string
+      notas?: string
+    } = {
       usuario_ids: seleccionados,
       fecha_inicio: isoLocal(fromInputDateTimeLocal(inicio)),
       fecha_fin: isoLocal(fromInputDateTimeLocal(fin)),
-      notas: notas.trim() || undefined,
+      creado_por: editando?.creado_por ?? yo.id,
     }
+    // Firestore rechaza undefined como valor de campo; solo añadimos notas si hay contenido.
+    if (notasTrim) payload.notas = notasTrim
     if (editando) {
       await onGuardarEditado(editando.id, payload)
     } else {

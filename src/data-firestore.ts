@@ -17,6 +17,14 @@ import { getDb } from './firebase'
 import type { Usuario, Turno, Nota } from './types'
 import type { DataLayer } from './data'
 
+function stripUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  const out: Partial<T> = {}
+  for (const k of Object.keys(obj) as (keyof T)[]) {
+    if (obj[k] !== undefined) out[k] = obj[k]
+  }
+  return out
+}
+
 function usuarioFromDoc(id: string, data: Record<string, unknown>): Usuario {
   const ts = data.fecha_creacion as { toDate?: () => Date } | string | undefined
   return {
@@ -88,14 +96,14 @@ export function createFirestoreDataLayer(): DataLayer {
 
     async crearTurno(input) {
       const ref = await addDoc(collection(getDb(), 'turnos'), {
-        ...input,
+        ...stripUndefined(input as Record<string, unknown>),
         fecha_creacion: serverTimestamp(),
       })
       return { ...input, id: ref.id, fecha_creacion: new Date().toISOString() }
     },
 
     async actualizarTurno(id, patch) {
-      await updateDoc(doc(getDb(), 'turnos', id), patch)
+      await updateDoc(doc(getDb(), 'turnos', id), stripUndefined(patch as Record<string, unknown>))
     },
 
     async eliminarTurno(id) {
@@ -109,7 +117,7 @@ export function createFirestoreDataLayer(): DataLayer {
 
     async crearNota(input) {
       const ref = await addDoc(collection(getDb(), 'notas'), {
-        ...input,
+        ...stripUndefined(input as Record<string, unknown>),
         fecha_creacion: serverTimestamp(),
       })
       return { ...input, id: ref.id, fecha_creacion: new Date().toISOString() }
