@@ -22,14 +22,14 @@ PWA privada y familiar para coordinar turnos de visita a un paciente hospitaliza
 - Pantalla de selección/creación de usuario (sin auth, lista de nombres de Firestore).
 - Persistencia de identidad en `localStorage`.
 - Reglas de Firestore (`firestore.rules`) que limitan campos escribibles.
-- Stub de Cloud Functions (`functions/src/index.ts`) para OneSignal: notificaciones inmediatas + programadas (`send_after`).
+- Cloud Functions v2 (`functions/src/`) para OneSignal: push inmediato al crear/editar turnos y alertas, y recordatorio programado 30 min antes (cancelado/reprogramado al editar o borrar el turno). Listo para desplegar; ver [docs/ONESIGNAL.md](./docs/ONESIGNAL.md).
+- Cliente OneSignal Web SDK v16 (`src/onesignal.ts`) con botón "Activar notificaciones".
 
 Pendiente (siguientes iteraciones):
 
 - Vista semanal del calendario y CRUD de turnos.
 - Tablón de notas + distinción visual de alertas.
-- Integración real de OneSignal Web SDK en el cliente.
-- Despliegue: configurar proyecto Firebase, secrets de OneSignal, GitHub Pages con base path correcto.
+- Despliegue de las funciones: crear la app en OneSignal, secrets y `firebase deploy` (pasos exactos en [docs/ONESIGNAL.md](./docs/ONESIGNAL.md)).
 
 Ver [ROADMAP.md](./ROADMAP.md) para el detalle.
 
@@ -45,8 +45,9 @@ Ver [ROADMAP.md](./ROADMAP.md) para el detalle.
 │   └── main.tsx            Entrada + registro del service worker
 ├── public/                 Iconos PWA y assets estáticos
 ├── scripts/                Utilidades (generador de iconos placeholder)
-├── functions/              Cloud Functions (stub, no desplegado todavía)
+├── functions/              Cloud Functions (listas, pendientes de desplegar)
 │   └── src/index.ts        Disparadores de notificaciones vía OneSignal
+├── docs/ONESIGNAL.md       Guía de puesta en marcha de las notificaciones push
 ├── firestore.rules         Reglas de seguridad de Firestore
 ├── .env.example            Plantilla de variables de entorno
 ├── vite.config.ts          Configuración Vite + PWA
@@ -62,11 +63,21 @@ pnpm dev                   # http://localhost:5173/visitas-familia/
 pnpm build                 # genera dist/ para desplegar
 ```
 
+## Notificaciones push (OneSignal)
+
+Resumen; guía completa con IAM y comprobaciones en [docs/ONESIGNAL.md](./docs/ONESIGNAL.md).
+
+1. Crear una app **Web Push (Custom Code)** en [onesignal.com](https://onesignal.com) con URL `https://sirminionbot.github.io/visitas-familia/`.
+2. `gh secret set VITE_ONESIGNAL_APP_ID` (secret de GitHub, lo lee la build de la PWA).
+3. `npm --prefix functions install`, luego `firebase functions:secrets:set ONESIGNAL_APP_ID` y `firebase functions:secrets:set ONESIGNAL_API_KEY` (la REST API key solo vive aquí).
+4. `firebase deploy --only firestore:rules,functions` (requiere plan Blaze y permisos de despliegue, ver la guía).
+
 ## Modelo de datos (resumen)
 
 - `usuarios/{uid}` — `{ nombre, onesignal_player_ids[], fecha_creacion }`
 - `turnos/{tid}` — `{ usuario_ids[], fecha_inicio, fecha_fin, notas, creado_por, fecha_creacion }`
 - `notas/{nid}` — `{ usuario_id, texto, es_alerta, fecha_creacion }`
+- `recordatorios/{tid}` — solo Cloud Functions: id del recordatorio programado en OneSignal
 
 Detalle completo en `firestore.rules` y `src/types.ts`.
 

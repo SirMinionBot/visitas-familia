@@ -3,7 +3,7 @@ rules_version = '2';
 // Reglas de Firestore para visitas-familia.
 //
 // Modelo (ver documento de requisitos, sección 3.4):
-//   - usuarios/{uid}   { nombre, onesignal_player_ids[], fecha_creacion }
+//   - usuarios/{uid}   { nombre, onesignal_player_ids[] (ids de suscripción push), fecha_creacion }
 //   - turnos/{tid}     { usuario_ids[], fecha_inicio, fecha_fin, notas, ... }
 //   - notas/{nid}      { usuario_id, texto, es_alerta, fecha_creacion }
 //
@@ -71,6 +71,12 @@ service cloud.firestore {
         && esString(request.resource.data.texto, 1, 2000)
         && esBool(request.resource.data.es_alerta);
       allow update, delete: if true;
+    }
+
+    // Recordatorios programados en OneSignal: solo los escriben las Cloud Functions
+    // (el Admin SDK ignora estas reglas). Ningún cliente puede leer ni escribir.
+    match /recordatorios/{tid} {
+      allow read, write: if false;
     }
 
     match /{document=**} {

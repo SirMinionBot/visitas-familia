@@ -19,15 +19,7 @@ pnpm dlx firebase-tools firestore:rules:deploy
 
 ## 3. OneSignal
 
-- Crear cuenta y app Web Push en [onesignal.com](https://onesignal.com).
-- Copiar `ONESIGNAL_APP_ID` y `ONESIGNAL_API_KEY` a Firebase Secrets:
-
-```bash
-firebase functions:secrets:set ONESIGNAL_APP_ID
-firebase functions:secrets:set ONESIGNAL_API_KEY
-```
-
-- Inicializar OneSignal en el cliente (en `index.html` o `src/main.tsx` siguiendo su guía Web SDK).
+Código ya implementado (cliente en `src/onesignal.ts`, Cloud Functions en `functions/`). Pendiente solo la parte de cuentas y despliegue: crear la app Web Push en [onesignal.com](https://onesignal.com), configurar los secrets (`VITE_ONESIGNAL_APP_ID` en GitHub; `ONESIGNAL_APP_ID` y `ONESIGNAL_API_KEY` en Firebase Functions) y ejecutar `firebase deploy --only firestore:rules,functions`. Pasos exactos, roles IAM y comprobaciones en [docs/ONESIGNAL.md](./docs/ONESIGNAL.md).
 
 ## 4. Calendario semanal (vista principal)
 

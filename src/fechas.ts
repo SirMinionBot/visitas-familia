@@ -1,7 +1,7 @@
 // Utilidades de fecha para el calendario semanal (lunes como primer día).
-// Mantenemos todo en hora local del dispositivo; las ISO strings se generan con
-// el offset local para que el recordatorio programado de OneSignal llegue a la
-// hora que el usuario espera en su reloj.
+// Mantenemos todo en hora local del dispositivo. Los turnos se guardan como ISO 8601
+// en UTC (`toISOString()`, con sufijo Z): es un instante absoluto, así que las Cloud
+// Functions calculan el recordatorio correctamente aunque corran en otra zona horaria.
 
 const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] as const
 export const DIAS_SEMANA = DIAS
