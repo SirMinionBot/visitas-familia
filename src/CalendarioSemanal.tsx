@@ -88,21 +88,24 @@ export default function CalendarioSemanal({ data, yo, usuarios }: Props) {
         <button
           type="button"
           onClick={() => setSemanaInicio((s) => sumarDias(s, -7))}
+          data-testid="semana-anterior"
         >
           ← Semana
         </button>
-        <strong style={{ flex: 1, textAlign: 'center' }}>
+        <strong style={{ flex: 1, textAlign: 'center' }} data-testid="semana-label">
           {formatFechaCorta(semanaInicio)} – {formatFechaCorta(sumarDias(semanaInicio, 6))}
         </strong>
         <button
           type="button"
           onClick={() => setSemanaInicio((s) => sumarDias(s, 7))}
+          data-testid="semana-siguiente"
         >
           Semana →
         </button>
         <button
           type="button"
           onClick={() => setSemanaInicio(inicioSemana(new Date()))}
+          data-testid="semana-hoy"
           title="Volver a la semana actual"
         >
           Hoy
@@ -192,12 +195,16 @@ function RowFranja({
       {Array.from({ length: 7 }).map((_, iDia) => {
         const dia = sumarDias(semanaInicio, iDia)
         const t = turnosEnFranja(dia, franja.inicio, franja.fin)
+        const dataDia = `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}-${String(dia.getDate()).padStart(2, '0')}`
+        const hora = String(franja.inicio.getHours()).padStart(2, '0')
+        const min = String(franja.inicio.getMinutes()).padStart(2, '0')
         return (
           <div
             key={iDia}
             onClick={() => {
               if (t.length === 0) onClickVacio(dia)
             }}
+            data-testid={`celda-${dataDia}-${hora}${min}`}
             style={{
               ...bodyCell,
               minHeight: 32,
@@ -215,6 +222,7 @@ function RowFranja({
                 title={`${new Date(turno.fecha_inicio).toLocaleString()} → ${new Date(
                   turno.fecha_fin,
                 ).toLocaleString()}`}
+                data-testid={`turno-${turno.id}`}
                 style={{
                   display: 'block',
                   width: '100%',
@@ -310,6 +318,7 @@ function ModalFormulario({
   return (
     <div
       onClick={onCancelar}
+      data-testid="modal-backdrop"
       style={{
         position: 'fixed',
         inset: 0,
@@ -323,6 +332,7 @@ function ModalFormulario({
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        data-testid="modal"
         style={{
           background: '#161b22',
           border: '1px solid #30363d',
@@ -339,7 +349,7 @@ function ModalFormulario({
         <fieldset style={{ border: 'none', padding: 0, marginBottom: '0.75rem' }}>
           <legend style={{ fontWeight: 600, marginBottom: 4 }}>Familiares</legend>
           {usuarios.map((u) => (
-            <label key={u.id} style={{ display: 'block', margin: '0.25rem 0' }}>
+            <label key={u.id} style={{ display: 'block', margin: '0.25rem 0' }} data-testid={`modal-usuario-${u.id}`}>
               <input
                 type="checkbox"
                 checked={seleccionados.includes(u.id)}
@@ -356,6 +366,7 @@ function ModalFormulario({
             type="datetime-local"
             value={inicio}
             onChange={(e) => setInicio(e.target.value)}
+            data-testid="modal-inicio"
             style={{ display: 'block', width: '100%', padding: '0.4rem', marginTop: 2 }}
           />
         </label>
@@ -366,6 +377,7 @@ function ModalFormulario({
             type="datetime-local"
             value={fin}
             onChange={(e) => setFin(e.target.value)}
+            data-testid="modal-fin"
             style={{ display: 'block', width: '100%', padding: '0.4rem', marginTop: 2 }}
           />
         </label>
@@ -375,6 +387,7 @@ function ModalFormulario({
           <textarea
             value={notas}
             onChange={(e) => setNotas(e.target.value)}
+            data-testid="modal-notas"
             rows={2}
             style={{ display: 'block', width: '100%', padding: '0.4rem', marginTop: 2 }}
           />
@@ -386,6 +399,7 @@ function ModalFormulario({
               <button
                 type="button"
                 onClick={() => void eliminar()}
+                data-testid="modal-eliminar"
                 style={{ background: '#da3633', borderColor: '#da3633' }}
               >
                 Eliminar
@@ -393,10 +407,10 @@ function ModalFormulario({
             )}
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button type="button" onClick={onCancelar}>
+            <button type="button" onClick={onCancelar} data-testid="modal-cancelar">
               Cancelar
             </button>
-            <button type="button" onClick={() => void guardar()}>
+            <button type="button" onClick={() => void guardar()} data-testid="modal-guardar">
               Guardar
             </button>
           </div>

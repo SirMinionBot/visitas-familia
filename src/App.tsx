@@ -24,7 +24,7 @@ function ShellUsuario({
   const [tab, setTab] = useState<'cal' | 'notas'>('cal')
 
   return (
-    <main style={{ maxWidth: 960, margin: '0 auto', padding: '1rem' }}>
+    <main style={{ maxWidth: 720, margin: '0 auto', padding: '1rem' }} data-testid="app-shell">
       <header
         style={{
           display: 'flex',
@@ -40,7 +40,7 @@ function ShellUsuario({
             {firebaseConfigured ? 'Firestore' : 'Modo mock (local)'}
           </small>
         </div>
-        <button type="button" onClick={onSalir}>
+        <button type="button" onClick={onSalir} data-testid="btn-cambiar-usuario">
           Cambiar de usuario
         </button>
       </header>
@@ -49,6 +49,7 @@ function ShellUsuario({
         <button
           type="button"
           onClick={() => setTab('cal')}
+          data-testid="tab-calendario"
           style={{ background: tab === 'cal' ? '#1f6feb' : undefined }}
         >
           Calendario
@@ -56,6 +57,7 @@ function ShellUsuario({
         <button
           type="button"
           onClick={() => setTab('notas')}
+          data-testid="tab-notas"
           style={{ background: tab === 'notas' ? '#1f6feb' : undefined }}
         >
           Notas y alertas
