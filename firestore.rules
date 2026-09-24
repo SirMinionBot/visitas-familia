@@ -1,0 +1,67 @@
+rules_version = '2';
+
+// Reglas de Firestore para visitas-familia.
+//
+// Modelo (ver documento de requisitos, sección 3.4):
+//   - usuarios/{uid}   { nombre, onesignal_player_ids[], fecha_creacion }
+//   - turnos/{tid}     { usuario_ids[], fecha_inicio, fecha_fin, notas, ... }
+//   - notas/{nid}      { usuario_id, texto, es_alerta, fecha_creacion }
+//
+// Decisión de seguridad (gap #3 del documento): sin auth. El control de acceso
+// se apoya en que la URL de la PWA no se comparta fuera del núcleo familiar.
+// Estas reglas cierran el único vector público: nadie puede escribir sin
+// conocer el proyecto (Firebase ya impone esto), y limitamos los campos
+// escribibles para evitar que un documento mal formado rompa el cliente.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function esString(s) {
+      return s is string && s.size() > 0 && s.size() < 200;
+    }
+    function esBool(b) {
+      return b is bool;
+    }
+    function esListaDeStrings(l, max) {
+      return l is list && l.size() <= max
+        && l.hasOnly([].concat([for (x in l if esString(x)) x]));
+    }
+
+    match /usuarios/{uid} {
+      allow read: if true; // la app lista nombres al entrar
+      allow create: if request.resource.data.keys().hasOnly(['nombre', 'onesignal_player_ids', 'fecha_creacion'])
+        && esString(request.resource.data.nombre)
+        && esListaDeStrings(request.resource.data.onesignal_player_ids, 10);
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['onesignal_player_ids'])
+        && esListaDeStrings(request.resource.data.onesignal_player_ids, 10);
+      allow delete: if false; // nadie borra usuarios desde el cliente
+    }
+
+    match /turnos/{tid} {
+      allow read: if true;
+      allow create: if request.resource.data.keys()
+          .hasOnly(['usuario_ids', 'fecha_inicio', 'fecha_fin', 'notas', 'creado_por', 'fecha_creacion'])
+        && esListaDeStrings(request.resource.data.usuario_ids, 20)
+        && esString(request.resource.data.fecha_inicio)
+        && esString(request.resource.data.fecha_fin)
+        && esString(request.resource.data.creado_por);
+      allow update, delete: if true;
+    }
+
+    match /notas/{nid} {
+      allow read: if true;
+      allow create: if request.resource.data.keys()
+          .hasOnly(['usuario_id', 'texto', 'es_alerta', 'fecha_creacion'])
+        && esString(request.resource.data.usuario_id)
+        && esString(request.resource.data.texto)
+        && request.resource.data.texto.size() <= 2000
+        && esBool(request.resource.data.es_alerta);
+      allow update, delete: if true;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
