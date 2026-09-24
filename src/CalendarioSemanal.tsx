@@ -70,9 +70,15 @@ export default function CalendarioSemanal({ data, yo, usuarios }: Props) {
     const iniIso = isoLocal(franjaInicio)
     const finIso = isoLocal(franjaFin)
     return turnos.filter((t) => {
+      if (!t.fecha_inicio || !t.fecha_fin) return false
       const tInicio = new Date(t.fecha_inicio)
+      // Comparamos por día local: si el turno empieza en otro día, descartamos.
       if (tInicio.toDateString() !== dia.toDateString()) return false
-      return t.fecha_inicio < finIso && iniIso < t.fecha_fin
+      // Solapamiento: el turno empieza antes de que termine la franja Y
+      // termina después de que empiece la franja. Usamos <= para que un
+      // turno que empieza exactamente al inicio de la franja cuente como
+      // visible (caso real al pulsar una franja vacía).
+      return t.fecha_inicio < finIso && iniIso <= t.fecha_fin
     })
   }
 
@@ -152,6 +158,8 @@ export default function CalendarioSemanal({ data, yo, usuarios }: Props) {
           onCancelar={() => {
             setCreando(null)
             setEditando(null)
+            // Aseguramos que al cerrar el modal el usuario ve el calendario desde arriba.
+            window.scrollTo({ top: 0, behavior: 'smooth' })
           }}
           onGuardarNuevo={guardarNuevo}
           onGuardarEditado={guardarEditado}
