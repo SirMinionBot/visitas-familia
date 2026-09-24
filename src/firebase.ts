@@ -1,7 +1,6 @@
-// Cliente de Firebase. La configuración real se inyecta desde variables de entorno
-// en build time (Vite las lee de .env / .env.production). Las claves públicas se
-// exponen en el bundle por diseño del SDK web de Firebase; el control de acceso real
-// vive en firestore.rules + Cloud Functions.
+// Cliente de Firebase. Solo se inicializa si hay config en variables de entorno.
+// Cuando falta, getDb() lanza un error claro y la capa de datos cae al modo mock
+// (ver src/data.ts → getDataLayer).
 
 import { initializeApp, type FirebaseApp } from 'firebase/app'
 import { getFirestore, type Firestore } from 'firebase/firestore'
@@ -14,6 +13,8 @@ const firebaseConfig = {
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as string | undefined,
   appId: import.meta.env.VITE_FIREBASE_APP_ID as string | undefined,
 }
+
+export const firebaseConfigured = !!firebaseConfig.projectId
 
 let app: FirebaseApp | null = null
 let db: Firestore | null = null
