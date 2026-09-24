@@ -70,10 +70,17 @@ async function main() {
   const celdas = await page.locator('[data-testid^="celda-"]').count()
   check('celdas del calendario renderizadas', celdas >= 196, `${celdas} celdas`)
 
-  // ¿Hay turnos renderizados YA? Si los hay en Firestore de runs anteriores y se ven,
-  // la suscripción funciona. Si no se ven, la suscripción está rota.
+  // Debug: leemos el estado real del calendario desde el navegador.
+  // Hacemos un pequeño delay para que la suscripción inicial termine.
+  await page.waitForTimeout(2000)
   const turnosIniciales = await page.locator('[data-testid^="turno-"]').count()
   console.log(`    turnos visibles inicialmente: ${turnosIniciales}`)
+  if (turnosIniciales === 0) {
+    // Debug extra: ¿se llamó alguna vez onTurnosChange? Forzamos un console.log
+    await page.evaluate(() => {
+      console.log('[debug] turnos en DOM:', document.querySelectorAll('[data-testid^="turno-"]').length)
+    })
+  }
   check('suscripción inicial a turnos funciona', turnosIniciales >= 0,
     `${turnosIniciales} turnos visibles (si >0, suscripción OK)`)
 
