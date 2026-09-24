@@ -41,6 +41,8 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2}'],
+        // El service worker de OneSignal es independiente (otro scope): no se precachea.
+        globIgnores: ['push/**'],
         navigateFallback: '/visitas-familia/index.html',
       },
     }),

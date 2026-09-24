@@ -7,7 +7,8 @@ import type { Usuario } from './types'
 import { STORAGE_KEYS } from './types'
 import type { DataLayer } from './data'
 import { getDataLayer } from './data'
-import { initOneSignal, getPlayerId } from './onesignal'
+import { initOneSignal, escucharPlayerId } from './onesignal'
+import BotonNotificaciones from './BotonNotificaciones'
 import { firebaseConfigured } from './firebase'
 
 function ShellUsuario({
@@ -22,6 +23,19 @@ function ShellUsuario({
   onSalir: () => void
 }) {
   const [tab, setTab] = useState<'cal' | 'notas'>('cal')
+
+  // Vincula este dispositivo (id de suscripción push de OneSignal) con el usuario actual.
+  // Se dispara al conceder el permiso o al abrir la app si ya estaba suscrito.
+  useEffect(
+    () =>
+      escucharPlayerId((pid) => {
+        data.agregarPlayerId(yo.id, pid).catch((e) => {
+          // Las reglas limitan la lista a 10 ids; un fallo aquí no debe romper la app.
+          console.warn('[onesignal] no se pudo guardar el player_id', e)
+        })
+      }),
+    [data, yo.id],
+  )
 
   return (
     <main style={{ maxWidth: 720, margin: '0 auto', padding: '1rem' }} data-testid="app-shell">
@@ -40,9 +54,12 @@ function ShellUsuario({
             {firebaseConfigured ? 'Firestore' : 'Modo mock (local)'}
           </small>
         </div>
-        <button type="button" onClick={onSalir} data-testid="btn-cambiar-usuario">
-          Cambiar de usuario
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <BotonNotificaciones />
+          <button type="button" onClick={onSalir} data-testid="btn-cambiar-usuario">
+            Cambiar de usuario
+          </button>
+        </div>
       </header>
 
       <nav style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0' }}>
@@ -84,6 +101,9 @@ function App() {
     let montado = true
     let unsubUsuarios: (() => void) | null = null
 
+    // Carga el SDK de OneSignal en segundo plano (no bloquea ni lanza; inerte sin APP_ID).
+    void initOneSignal()
+
     void (async () => {
       try {
         const dl = await getDataLayer()
@@ -101,15 +121,9 @@ function App() {
           const yo = lista.find((u) => u.id === id)
           if (yo) {
             setUsuario(yo)
-            // Re-vincular player_id si OneSignal está listo.
-            await initOneSignal()
-            const pid = getPlayerId()
-            if (pid) await dl.agregarPlayerId(yo.id, pid)
           } else {
             localStorage.removeItem(STORAGE_KEYS.usuarioId)
           }
-        } else {
-          await initOneSignal()
         }
       } catch (e) {
         if (montado) setError(e instanceof Error ? e.message : String(e))
@@ -152,13 +166,7 @@ function App() {
               <SeleccionUsuario
                 data={data}
                 usuarios={usuarios}
-                onElegido={(u) => {
-                  setUsuario(u)
-                  void initOneSignal().then(() => {
-                    const pid = getPlayerId()
-                    if (pid) void data.agregarPlayerId(u.id, pid)
-                  })
-                }}
+                onElegido={setUsuario}
               />
             )
           }
