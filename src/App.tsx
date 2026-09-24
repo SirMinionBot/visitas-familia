@@ -6,9 +6,8 @@ import TablonNotas from './TablonNotas'
 import type { Usuario } from './types'
 import { STORAGE_KEYS } from './types'
 import type { DataLayer } from './data'
-import { getDataLayer } from './data'
+import { getDataLayer, firebaseConfigured } from './data'
 import { initOneSignal, getPlayerId } from './onesignal'
-import { firebaseConfigured } from './firebase'
 
 function ShellUsuario({
   data,
