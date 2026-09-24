@@ -67,18 +67,20 @@ export default function CalendarioSemanal({ data, yo, usuarios }: Props) {
   }
 
   function turnosEnFranja(dia: Date, franjaInicio: Date, franjaFin: Date): Turno[] {
-    const iniIso = isoLocal(franjaInicio)
-    const finIso = isoLocal(franjaFin)
+    // franjasDelDia() genera las franjas sobre la fecha de hoy; las trasladamos
+    // al día de la celda para comparar instantes reales.
+    const ini = new Date(dia)
+    ini.setHours(franjaInicio.getHours(), franjaInicio.getMinutes(), 0, 0)
+    const fin = new Date(dia)
+    fin.setHours(franjaFin.getHours(), franjaFin.getMinutes(), 0, 0)
+    if (fin <= ini) fin.setDate(fin.getDate() + 1)
+    const iniMs = ini.getTime()
+    const finMs = fin.getTime()
     return turnos.filter((t) => {
       if (!t.fecha_inicio || !t.fecha_fin) return false
-      const tInicio = new Date(t.fecha_inicio)
-      // Comparamos por día local: si el turno empieza en otro día, descartamos.
-      if (tInicio.toDateString() !== dia.toDateString()) return false
-      // Solapamiento: el turno empieza antes de que termine la franja Y
-      // termina después de que empiece la franja. Usamos <= para que un
-      // turno que empieza exactamente al inicio de la franja cuente como
-      // visible (caso real al pulsar una franja vacía).
-      return t.fecha_inicio < finIso && iniIso <= t.fecha_fin
+      const tIni = new Date(t.fecha_inicio).getTime()
+      const tFin = new Date(t.fecha_fin).getTime()
+      return tIni < finMs && iniMs < tFin
     })
   }
 

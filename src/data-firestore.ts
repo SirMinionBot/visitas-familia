@@ -138,9 +138,7 @@ export function createFirestoreDataLayer(): DataLayer {
     },
 
     onTurnosChange(cb) {
-      console.info('[data-firestore] onTurnosChange: suscribiendo')
       return onSnapshot(collection(getDb(), 'turnos'), (snap) => {
-        console.info('[data-firestore] onTurnosChange snapshot:', snap.size, 'docs')
         const list = snap.docs.map((d) => turnoFromDoc(d.id, d.data()))
         list.sort((a, b) => a.fecha_inicio.localeCompare(b.fecha_inicio))
         cb(list)
@@ -148,9 +146,7 @@ export function createFirestoreDataLayer(): DataLayer {
     },
 
     onNotasChange(cb) {
-      console.info('[data-firestore] onNotasChange: suscribiendo')
       return onSnapshot(collection(getDb(), 'notas'), (snap) => {
-        console.info('[data-firestore] onNotasChange snapshot:', snap.size, 'docs')
         const list = snap.docs.map((d) => notaFromDoc(d.id, d.data()))
         list.sort((a, b) => b.fecha_creacion.localeCompare(a.fecha_creacion))
         cb(list)
