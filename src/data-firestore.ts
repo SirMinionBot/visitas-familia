@@ -10,8 +10,6 @@ import {
   onSnapshot,
   arrayUnion,
   serverTimestamp,
-  query,
-  orderBy,
 } from 'firebase/firestore'
 import { getDb } from './firebase'
 import type { Usuario, Turno, Nota } from './types'
@@ -90,8 +88,10 @@ export function createFirestoreDataLayer(): DataLayer {
     },
 
     async listarTurnos() {
-      const snap = await getDocs(query(collection(getDb(), 'turnos'), orderBy('fecha_inicio')))
-      return snap.docs.map((d) => turnoFromDoc(d.id, d.data()))
+      const snap = await getDocs(collection(getDb(), 'turnos'))
+      const list = snap.docs.map((d) => turnoFromDoc(d.id, d.data()))
+      list.sort((a, b) => a.fecha_inicio.localeCompare(b.fecha_inicio))
+      return list
     },
 
     async crearTurno(input) {
@@ -111,8 +111,10 @@ export function createFirestoreDataLayer(): DataLayer {
     },
 
     async listarNotas() {
-      const snap = await getDocs(query(collection(getDb(), 'notas'), orderBy('fecha_creacion', 'desc')))
-      return snap.docs.map((d) => notaFromDoc(d.id, d.data()))
+      const snap = await getDocs(collection(getDb(), 'notas'))
+      const list = snap.docs.map((d) => notaFromDoc(d.id, d.data()))
+      list.sort((a, b) => b.fecha_creacion.localeCompare(a.fecha_creacion))
+      return list
     },
 
     async crearNota(input) {
@@ -136,17 +138,19 @@ export function createFirestoreDataLayer(): DataLayer {
     },
 
     onTurnosChange(cb) {
-      return onSnapshot(
-        query(collection(getDb(), 'turnos'), orderBy('fecha_inicio')),
-        (snap) => cb(snap.docs.map((d) => turnoFromDoc(d.id, d.data()))),
-      )
+      return onSnapshot(collection(getDb(), 'turnos'), (snap) => {
+        const list = snap.docs.map((d) => turnoFromDoc(d.id, d.data()))
+        list.sort((a, b) => a.fecha_inicio.localeCompare(b.fecha_inicio))
+        cb(list)
+      })
     },
 
     onNotasChange(cb) {
-      return onSnapshot(
-        query(collection(getDb(), 'notas'), orderBy('fecha_creacion', 'desc')),
-        (snap) => cb(snap.docs.map((d) => notaFromDoc(d.id, d.data()))),
-      )
+      return onSnapshot(collection(getDb(), 'notas'), (snap) => {
+        const list = snap.docs.map((d) => notaFromDoc(d.id, d.data()))
+        list.sort((a, b) => b.fecha_creacion.localeCompare(a.fecha_creacion))
+        cb(list)
+      })
     },
   }
 }

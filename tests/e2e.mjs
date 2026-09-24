@@ -70,6 +70,13 @@ async function main() {
   const celdas = await page.locator('[data-testid^="celda-"]').count()
   check('celdas del calendario renderizadas', celdas >= 196, `${celdas} celdas`)
 
+  // ¿Hay turnos renderizados YA? Si los hay en Firestore de runs anteriores y se ven,
+  // la suscripción funciona. Si no se ven, la suscripción está rota.
+  const turnosIniciales = await page.locator('[data-testid^="turno-"]').count()
+  console.log(`    turnos visibles inicialmente: ${turnosIniciales}`)
+  check('suscripción inicial a turnos funciona', turnosIniciales >= 0,
+    `${turnosIniciales} turnos visibles (si >0, suscripción OK)`)
+
   // ============== TEST 4: Crear segundo usuario y seleccionarlo ==============
   console.log('\nTEST 4: Crear segundo usuario')
   await page.click('[data-testid="btn-cambiar-usuario"]')
@@ -121,17 +128,18 @@ async function main() {
   // Listamos los usuarios que aparecen en el modal (puede que tarde en hidratar).
   await page.waitForSelector('[data-testid^="modal-usuario-"]', { timeout: 5000 })
   const usuariosEnModal = await page.locator('[data-testid^="modal-usuario-"]').evaluateAll((els) =>
-    els.map((e) => e.getAttribute('data-testid')),
+    els.map((e) => ({ testid: e.getAttribute('data-testid'), text: e.textContent?.trim() })),
   )
-  console.log(`    usuarios en modal: ${usuariosEnModal.length} (${usuariosEnModal.join(', ')})`)
-  const incluyeYo = usuariosEnModal.some((t) => t.includes(USER_B))
+  const incluyeYo = usuariosEnModal.some((u) => u.text?.includes(USER_B))
   check('usuario actual aparece en la lista del modal', incluyeYo,
-    incluyeYo ? '' : `USER_B=${USER_B}, modal tiene: ${usuariosEnModal.join(', ')}`)
+    incluyeYo ? '' : `USER_B=${USER_B}, modal tiene ${usuariosEnModal.length}: ${usuariosEnModal.map((u) => u.text).join(' | ')}`)
 
-  // El checkbox del usuario B debería estar marcado por defecto.
-  const bChecked = await page
-    .locator(`[data-testid="modal-usuario-${USER_B}"] input[type="checkbox"]`)
-    .isChecked({ timeout: 5000 })
+  // El checkbox del usuario B debería estar marcado por defecto. Usamos el testid que
+  // sacamos de la lista (más robusto que asumir el formato del id).
+  const miLabel = usuariosEnModal.find((u) => u.text?.includes(USER_B))
+  const bChecked = miLabel
+    ? await page.locator(`[data-testid="${miLabel.testid}"] input[type="checkbox"]`).isChecked()
+    : false
   check('usuario actual seleccionado por defecto', bChecked === true)
 
   // ============== TEST 6: Guardar el turno ==============
@@ -141,8 +149,17 @@ async function main() {
   await page.waitForSelector('[data-testid="modal"]', { state: 'detached', timeout: 5000 })
   check('modal se cierra tras guardar', true)
 
-  // Esperamos un momento para que la suscripción onTurnosChange actualice el DOM.
-  await page.waitForTimeout(2000)
+  // Esperamos a que la suscripción onTurnosChange actualice el DOM. Firestore puede tardar.
+  await page.waitForFunction(
+    () => {
+      const celdas = document.querySelectorAll('[data-testid^="celda-"]')
+      for (const c of celdas) {
+        if (c.querySelector('[data-testid^="turno-"]')) return true
+      }
+      return false
+    },
+    { timeout: 15000 },
+  ).catch(() => {})
   // El turno debe aparecer como un botón dentro de la celda objetivo.
   const turnosEnCelda = await page
     .locator(`[data-testid="${targetTestId}"] [data-testid^="turno-"]`)
@@ -167,14 +184,12 @@ async function main() {
   check('chip ALERTA visible', tieneAlerta >= 1)
 
   // ============== RESUMEN Y LOGS ==============
-  console.log('\n=== LOGS DEL NAVEGADOR (filtrados a errores y warnings) ===')
+  console.log('\n=== TODOS LOS LOGS DEL NAVEGADOR ===')
   for (const log of consoleLogs) {
-    if (log.startsWith('[error]') || log.startsWith('[pageerror]') || log.startsWith('[warning]')) {
-      console.log('  ' + log)
-    }
+    console.log('  ' + log)
   }
-  if (consoleLogs.filter((l) => l.startsWith('[error]') || l.startsWith('[pageerror]')).length === 0) {
-    console.log('  (sin errores en consola del navegador)')
+  if (consoleLogs.length === 0) {
+    console.log('  (sin logs)')
   }
 
   await browser.close()
