@@ -52,11 +52,11 @@ export function solapan(aInicio: string, aFin: string, bInicio: string, bFin: st
 }
 
 export function franjasDelDia(): { inicio: Date; fin: Date; label: string }[] {
-  // 8:00 a 22:00 en tramos de 30 min.
+  // Las 24 h del día (00:00 a 24:00) en tramos de 30 min.
   const out: { inicio: Date; fin: Date; label: string }[] = []
   const ref = new Date()
-  ref.setHours(8, 0, 0, 0)
-  for (let h = 8; h < 22; h++) {
+  ref.setHours(0, 0, 0, 0)
+  for (let h = 0; h < 24; h++) {
     for (const m of [0, 30]) {
       const inicio = new Date(ref)
       inicio.setHours(h, m, 0, 0)

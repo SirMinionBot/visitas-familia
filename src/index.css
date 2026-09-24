@@ -29,3 +29,17 @@ textarea {
   border: 1px solid #30363d;
   border-radius: 6px;
 }
+
+/* Móvil: objetivos táctiles cómodos y sin zoom automático de iOS al enfocar campos. */
+@media (max-width: 640px) {
+  .cal-nav button {
+    min-height: 40px;
+    min-width: 40px;
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}

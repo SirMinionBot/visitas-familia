@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { DataLayer } from './data'
 import type { Turno, Usuario } from './types'
 import {
@@ -9,6 +9,7 @@ import {
   fromInputDateTimeLocal,
   isoLocal,
   formatFechaCorta,
+  formatHora,
   franjasDelDia,
 } from './fechas'
 
@@ -18,23 +19,77 @@ interface Props {
   usuarios: Usuario[]
 }
 
+type Vista = 'semana' | 'dia'
+
+const MQ_MOVIL = '(max-width: 640px)'
+// Hora a la que se posiciona el scroll al abrir el calendario (si hoy no está a la vista).
+const HORA_INICIAL = 8
+
+function useEsMovil(): boolean {
+  const [movil, setMovil] = useState(() => window.matchMedia(MQ_MOVIL).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(MQ_MOVIL)
+    const onChange = () => setMovil(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  return movil
+}
+
+function nombreDia(d: Date): string {
+  return DIAS_SEMANA[(d.getDay() + 6) % 7]
+}
+
+function claveHora(d: Date): string {
+  return `${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+function claveDia(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 export default function CalendarioSemanal({ data, yo, usuarios }: Props) {
-  const [semanaInicio, setSemanaInicio] = useState<Date>(() => inicioSemana(new Date()))
+  const esMovil = useEsMovil()
+  // Fecha "ancla": cualquier día de lo que se está viendo. La semana se deriva de ella.
+  const [ancla, setAncla] = useState<Date>(() => new Date())
+  // null = automático (día en móvil, semana en pantallas grandes).
+  const [vistaManual, setVistaManual] = useState<Vista | null>(null)
+  const vista: Vista = vistaManual ?? (esMovil ? 'dia' : 'semana')
   const [turnos, setTurnos] = useState<Turno[]>([])
   const [editando, setEditando] = useState<Turno | null>(null)
   const [creando, setCreando] = useState<{ fecha_inicio: string; fecha_fin: string } | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const unsub = data.onTurnosChange(setTurnos)
     return unsub
   }, [data])
 
+  const semanaInicio = useMemo(() => inicioSemana(ancla), [ancla])
+  const diasSemana = useMemo(() => Array.from({ length: 7 }, (_, i) => sumarDias(semanaInicio, i)), [semanaInicio])
+  const diasVisibles = vista === 'semana' ? diasSemana : [ancla]
   const franjas = useMemo(() => franjasDelDia(), [])
   const mapaNombre = useMemo(() => {
     const m = new Map<string, string>()
     usuarios.forEach((u) => m.set(u.id, u.nombre))
     return m
   }, [usuarios])
+
+  // Al cambiar de vista o de semana/día, colocamos el scroll: en la hora actual si
+  // hoy está a la vista, y si no a primera hora de la mañana. Así no se empieza a las 00:00.
+  useLayoutEffect(() => {
+    const cont = scrollRef.current
+    if (!cont) return
+    const hoy = new Date()
+    const hoyVisible = diasVisibles.some((d) => d.toDateString() === hoy.toDateString())
+    const hora = hoyVisible ? Math.max(hoy.getHours() - 1, 0) : HORA_INICIAL
+    const fila = cont.querySelector<HTMLElement>(`[data-testid="hora-${String(hora).padStart(2, '0')}00"]`)
+    const cabecera = cont.querySelector<HTMLElement>('[data-testid="cal-cabecera"]')
+    if (!fila) return
+    cont.scrollTop +=
+      fila.getBoundingClientRect().top - cont.getBoundingClientRect().top - (cabecera?.offsetHeight ?? 0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vista, semanaInicio.getTime(), vista === 'dia' ? ancla.toDateString() : ''])
 
   function abrirCreacion(dia: Date, hora: number, minutos: number) {
     const inicio = new Date(dia)
@@ -66,16 +121,20 @@ export default function CalendarioSemanal({ data, yo, usuarios }: Props) {
     setEditando(null)
   }
 
-  function turnosEnFranja(dia: Date, franjaInicio: Date, franjaFin: Date): Turno[] {
-    // franjasDelDia() genera las franjas sobre la fecha de hoy; las trasladamos
-    // al día de la celda para comparar instantes reales.
+  // Instantes [ini, fin) de una franja trasladada al día de la celda.
+  // franjasDelDia() genera las franjas sobre la fecha de hoy, así que hay que
+  // reubicarlas; la última franja (23:30–24:00) acaba en el día siguiente.
+  function limitesFranja(dia: Date, franjaInicio: Date, franjaFin: Date): [number, number] {
     const ini = new Date(dia)
     ini.setHours(franjaInicio.getHours(), franjaInicio.getMinutes(), 0, 0)
     const fin = new Date(dia)
     fin.setHours(franjaFin.getHours(), franjaFin.getMinutes(), 0, 0)
     if (fin <= ini) fin.setDate(fin.getDate() + 1)
-    const iniMs = ini.getTime()
-    const finMs = fin.getTime()
+    return [ini.getTime(), fin.getTime()]
+  }
+
+  function turnosEnFranja(dia: Date, franjaInicio: Date, franjaFin: Date): Turno[] {
+    const [iniMs, finMs] = limitesFranja(dia, franjaInicio, franjaFin)
     return turnos.filter((t) => {
       if (!t.fecha_inicio || !t.fecha_fin) return false
       const tIni = new Date(t.fecha_inicio).getTime()
@@ -84,73 +143,165 @@ export default function CalendarioSemanal({ data, yo, usuarios }: Props) {
     })
   }
 
+  function diaTieneTurnos(dia: Date): boolean {
+    const ini = new Date(dia)
+    ini.setHours(0, 0, 0, 0)
+    const iniMs = ini.getTime()
+    const finMs = sumarDias(ini, 1).getTime()
+    return turnos.some((t) => {
+      const tIni = new Date(t.fecha_inicio).getTime()
+      const tFin = new Date(t.fecha_fin).getTime()
+      return tIni < finMs && iniMs < tFin
+    })
+  }
+
+  const paso = vista === 'semana' ? 7 : 1
+  const pref = vista === 'semana' ? 'semana' : 'dia'
+  const etiqueta =
+    vista === 'semana'
+      ? `${formatFechaCorta(semanaInicio)} – ${formatFechaCorta(sumarDias(semanaInicio, 6))}`
+      : `${nombreDia(ancla)} ${formatFechaCorta(ancla)}`
+
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+      <div className="cal-nav" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
         <button
           type="button"
-          onClick={() => setSemanaInicio((s) => sumarDias(s, -7))}
-          data-testid="semana-anterior"
+          onClick={() => setAncla((a) => sumarDias(a, -paso))}
+          data-testid={`${pref}-anterior`}
+          aria-label={vista === 'semana' ? 'Semana anterior' : 'Día anterior'}
         >
-          ← Semana
+          ←{vista === 'semana' && !esMovil ? ' Semana' : ''}
         </button>
         <strong style={{ flex: 1, textAlign: 'center' }} data-testid="semana-label">
-          {formatFechaCorta(semanaInicio)} – {formatFechaCorta(sumarDias(semanaInicio, 6))}
+          {etiqueta}
         </strong>
         <button
           type="button"
-          onClick={() => setSemanaInicio((s) => sumarDias(s, 7))}
-          data-testid="semana-siguiente"
+          onClick={() => setAncla((a) => sumarDias(a, paso))}
+          data-testid={`${pref}-siguiente`}
+          aria-label={vista === 'semana' ? 'Semana siguiente' : 'Día siguiente'}
         >
-          Semana →
+          {vista === 'semana' && !esMovil ? 'Semana ' : ''}→
         </button>
         <button
           type="button"
-          onClick={() => setSemanaInicio(inicioSemana(new Date()))}
+          onClick={() => setAncla(new Date())}
           data-testid="semana-hoy"
-          title="Volver a la semana actual"
+          title="Volver a hoy"
         >
           Hoy
         </button>
       </div>
 
+      <div className="cal-nav" style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' }}>
+        <div role="group" aria-label="Tipo de vista" style={{ display: 'flex', gap: 2 }}>
+          {(['dia', 'semana'] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setVistaManual(v)}
+              aria-pressed={vista === v}
+              data-testid={`vista-${v}`}
+              style={{ background: vista === v ? '#1f6feb' : undefined, borderColor: vista === v ? '#1f6feb' : undefined }}
+            >
+              {v === 'dia' ? 'Día' : 'Semana'}
+            </button>
+          ))}
+        </div>
+        {vista === 'dia' && (
+          <div
+            data-testid="tira-dias"
+            style={{ display: 'flex', gap: 2, flex: 1, minWidth: 0 }}
+          >
+            {diasSemana.map((d) => {
+              const activo = d.toDateString() === ancla.toDateString()
+              return (
+                <button
+                  key={d.getTime()}
+                  type="button"
+                  onClick={() => setAncla(d)}
+                  aria-pressed={activo}
+                  aria-label={`${nombreDia(d)} ${formatFechaCorta(d)}`}
+                  data-testid={`dia-${claveDia(d)}`}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    padding: '2px 0',
+                    fontSize: '0.7rem',
+                    lineHeight: 1.2,
+                    background: activo ? '#1f6feb' : undefined,
+                    borderColor: activo ? '#1f6feb' : undefined,
+                  }}
+                >
+                  {nombreDia(d)}
+                  <br />
+                  <strong>{d.getDate()}</strong>
+                  <br />
+                  <span style={{ color: diaTieneTurnos(d) ? '#3fb950' : 'transparent' }} aria-hidden>
+                    ●
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
       <div
+        ref={scrollRef}
+        data-testid="cal-scroll"
         style={{
-          display: 'grid',
-          gridTemplateColumns: '60px repeat(7, 1fr)',
-          gap: '1px',
-          background: '#30363d',
+          maxHeight: esMovil ? 'calc(100dvh - 15rem)' : 'calc(100dvh - 14rem)',
+          minHeight: 240,
+          overflow: 'auto',
           border: '1px solid #30363d',
           borderRadius: 6,
-          overflow: 'hidden',
+          overscrollBehavior: 'contain',
         }}
       >
-        <div style={headerCell}>Hora</div>
-        {DIAS_SEMANA.map((d, i) => (
-          <div key={d} style={headerCell}>
-            {d}
-            <br />
-            <small style={{ color: '#888' }}>
-              {formatFechaCorta(sumarDias(semanaInicio, i))}
-            </small>
+        <div
+          data-testid={`cal-grid-${vista}`}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: `${esMovil ? 48 : 60}px repeat(${diasVisibles.length}, minmax(${
+              vista === 'semana' ? 64 : 0
+            }px, 1fr))`,
+            gap: '1px',
+            background: '#30363d',
+          }}
+        >
+          <div
+            data-testid="cal-cabecera"
+            style={{ ...headerCell, position: 'sticky', top: 0, left: 0, zIndex: 3 }}
+          >
+            Hora
           </div>
-        ))}
+          {diasVisibles.map((d) => (
+            <div key={d.getTime()} style={{ ...headerCell, position: 'sticky', top: 0, zIndex: 2 }}>
+              {nombreDia(d)}
+              <br />
+              <small style={{ color: '#888' }}>{formatFechaCorta(d)}</small>
+            </div>
+          ))}
 
-        {franjas.map((franja, idxFila) => (
-          <RowFranja
-            key={idxFila}
-            franja={franja}
-            semanaInicio={semanaInicio}
-            turnosEnFranja={turnosEnFranja}
-            mapaNombre={mapaNombre}
-            yo={yo}
-            onClickVacio={(dia) => abrirCreacion(dia, franja.inicio.getHours(), franja.inicio.getMinutes())}
-            onClickTurno={(t) => {
-              setEditando(t)
-              setCreando(null)
-            }}
-          />
-        ))}
+          {franjas.map((franja, idxFila) => (
+            <RowFranja
+              key={idxFila}
+              franja={franja}
+              dias={diasVisibles}
+              turnosEnFranja={turnosEnFranja}
+              mapaNombre={mapaNombre}
+              yo={yo}
+              movil={esMovil}
+              onClickVacio={(dia) => abrirCreacion(dia, franja.inicio.getHours(), franja.inicio.getMinutes())}
+              onClickTurno={(t) => {
+                setEditando(t)
+                setCreando(null)
+              }}
+            />
+          ))}
+        </div>
       </div>
 
       {(creando || editando) && (
@@ -163,8 +314,6 @@ export default function CalendarioSemanal({ data, yo, usuarios }: Props) {
           onCancelar={() => {
             setCreando(null)
             setEditando(null)
-            // Aseguramos que al cerrar el modal el usuario ve el calendario desde arriba.
-            window.scrollTo({ top: 0, behavior: 'smooth' })
           }}
           onGuardarNuevo={guardarNuevo}
           onGuardarEditado={guardarEditado}
@@ -176,41 +325,57 @@ export default function CalendarioSemanal({ data, yo, usuarios }: Props) {
 
 function RowFranja({
   franja,
-  semanaInicio,
+  dias,
   turnosEnFranja,
   mapaNombre,
   yo,
+  movil,
   onClickVacio,
   onClickTurno,
 }: {
   franja: { inicio: Date; fin: Date; label: string }
-  semanaInicio: Date
+  dias: Date[]
   turnosEnFranja: (dia: Date, fIni: Date, fFin: Date) => Turno[]
   mapaNombre: Map<string, string>
   yo: Usuario
+  movil: boolean
   onClickVacio: (dia: Date) => void
   onClickTurno: (t: Turno) => void
 }) {
+  const hhmm = claveHora(franja.inicio)
+  // Las horas en punto llevan la etiqueta; las medias, más discretas.
+  const enPunto = franja.inicio.getMinutes() === 0
   return (
     <>
-      <div style={{ ...bodyCell, fontSize: '0.75rem', color: '#888' }}>{franja.label}</div>
-      {Array.from({ length: 7 }).map((_, iDia) => {
-        const dia = sumarDias(semanaInicio, iDia)
+      <div
+        data-testid={`hora-${hhmm}`}
+        style={{
+          ...bodyCell,
+          position: 'sticky',
+          left: 0,
+          zIndex: 1,
+          fontSize: '0.75rem',
+          color: enPunto ? '#aaa' : '#666',
+          minHeight: movil ? 44 : 32,
+        }}
+      >
+        {franja.label}
+      </div>
+      {dias.map((dia) => {
         const t = turnosEnFranja(dia, franja.inicio, franja.fin)
-        const dataDia = `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}-${String(dia.getDate()).padStart(2, '0')}`
-        const hora = String(franja.inicio.getHours()).padStart(2, '0')
-        const min = String(franja.inicio.getMinutes()).padStart(2, '0')
         return (
           <div
-            key={iDia}
+            key={dia.getTime()}
             onClick={() => {
               if (t.length === 0) onClickVacio(dia)
             }}
-            data-testid={`celda-${dataDia}-${hora}${min}`}
+            data-testid={`celda-${claveDia(dia)}-${hhmm}`}
             style={{
               ...bodyCell,
-              minHeight: 32,
+              minHeight: movil ? 44 : 32,
+              minWidth: 0,
               cursor: t.length === 0 ? 'pointer' : 'default',
+              borderTop: enPunto ? '1px solid #30363d' : '1px dashed #21262d',
             }}
           >
             {t.map((turno) => (
@@ -228,19 +393,28 @@ function RowFranja({
                 style={{
                   display: 'block',
                   width: '100%',
-                  padding: '2px 4px',
+                  padding: movil ? '6px 8px' : '2px 4px',
                   marginBottom: 2,
-                  fontSize: '0.7rem',
+                  fontSize: movil ? '0.85rem' : '0.7rem',
                   background: turno.usuario_ids.includes(yo.id) ? '#1f6feb' : '#238636',
                   color: '#fff',
                   border: 'none',
                   borderRadius: 3,
                   textAlign: 'left',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {turno.usuario_ids
                   .map((id) => mapaNombre.get(id) ?? '?')
                   .join(', ')}
+                {dias.length === 1 && (
+                  <small style={{ opacity: 0.8 }}>
+                    {' · '}
+                    {formatHora(new Date(turno.fecha_inicio))}–{formatHora(new Date(turno.fecha_fin))}
+                  </small>
+                )}
               </button>
             ))}
           </div>

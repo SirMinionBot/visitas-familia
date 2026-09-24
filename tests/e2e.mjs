@@ -9,7 +9,8 @@
 
 import { chromium } from 'playwright'
 
-const APP_URL = 'https://sirminionbot.github.io/visitas-familia/'
+// Por defecto contra producción; APP_URL=http://localhost:4173/visitas-familia/ para probar un build local (modo mock).
+const APP_URL = process.env.APP_URL ?? 'https://sirminionbot.github.io/visitas-familia/'
 
 // Prefijo único para los usuarios que crea el test (luego los borramos).
 const RUN_ID = 'E2E-' + Math.random().toString(36).slice(2, 8)
@@ -66,9 +67,9 @@ async function main() {
   const semanaLabel = await page.locator('[data-testid="semana-label"]').textContent()
   check('label de semana visible', !!semanaLabel, `"${semanaLabel}"`)
 
-  // Cuenta cuántas celdas hay (deberían ser 28 franjas × 7 días = 196)
+  // Cuenta cuántas celdas hay (24 h = 48 franjas × 7 días = 336)
   const celdas = await page.locator('[data-testid^="celda-"]').count()
-  check('celdas del calendario renderizadas', celdas >= 196, `${celdas} celdas`)
+  check('celdas del calendario renderizadas', celdas >= 336, `${celdas} celdas (48 franjas × 7 días)`)
 
   // Debug: leemos el estado real del calendario desde el navegador.
   // Hacemos un pequeño delay para que la suscripción inicial termine.
@@ -210,6 +211,21 @@ async function main() {
   for (const btn of await notaRun.locator('[data-testid^="btn-borrar-nota-"]').all()) await btn.click()
   await page.waitForTimeout(1500)
   check('nota se elimina', (await notaRun.count()) === 0)
+
+  // ============== TEST 8: Vista móvil (día a día) ==============
+  console.log('\nTEST 8: Vista móvil')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.click('[data-testid="tab-calendario"]')
+  await page.waitForSelector('[data-testid="cal-scroll"]', { timeout: 5000 })
+  check('móvil: vista día por defecto', (await page.locator('[data-testid="cal-grid-dia"]').count()) === 1)
+  check('móvil: 24 h en un día (48 franjas)', (await page.locator('[data-testid^="celda-"]').count()) === 48)
+  const desborda = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
+  check('móvil: sin scroll horizontal de página', !desborda)
+  await page.click('[data-testid="dia-siguiente"]')
+  const etiquetaDia = await page.locator('[data-testid="semana-label"]').textContent()
+  await page.click('[data-testid="dia-anterior"]')
+  check('móvil: navega entre días', etiquetaDia !== (await page.locator('[data-testid="semana-label"]').textContent()))
+  await page.setViewportSize({ width: 1280, height: 800 })
 
   // ============== RESUMEN Y LOGS ==============
   console.log('\n=== TODOS LOS LOGS DEL NAVEGADOR ===')
