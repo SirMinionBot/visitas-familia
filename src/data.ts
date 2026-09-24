@@ -30,9 +30,11 @@ export interface DataLayer {
   onNotasChange(cb: (notas: Nota[]) => void): () => void
 }
 
+// Ligero a propósito: no importa Firebase, para que no acabe en el bundle inicial.
+export const firebaseConfigured = !!import.meta.env.VITE_FIREBASE_PROJECT_ID
+
 export async function getDataLayer(): Promise<DataLayer> {
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID
-  if (projectId && projectId.length > 0) {
+  if (firebaseConfigured) {
     const { createFirestoreDataLayer } = await import('./data-firestore')
     return createFirestoreDataLayer()
   }
