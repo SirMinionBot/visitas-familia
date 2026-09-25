@@ -48,6 +48,65 @@ function claveDia(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+const MIN_DIA = 1440
+const NUM_FRANJAS = 48
+
+interface Segmento {
+  turno: Turno
+  ini: number // minutos desde las 00:00 del día
+  fin: number
+  desdeAntes: boolean // el turno empezó un día anterior
+  hastaDespues: boolean // el turno continúa al día siguiente
+  carril: number
+  carriles: number
+}
+
+// Trozo de cada turno que cae en `dia`, con sus carriles para que los turnos que
+// coinciden en el tiempo se repartan el ancho de la columna sin taparse.
+function segmentosDelDia(dia: Date, turnos: Turno[]): Segmento[] {
+  const d0 = new Date(dia)
+  d0.setHours(0, 0, 0, 0)
+  const d1 = sumarDias(d0, 1)
+  const minutosLocales = (d: Date) => d.getHours() * 60 + d.getMinutes()
+  const segs: Segmento[] = []
+  for (const t of turnos) {
+    if (!t.fecha_inicio || !t.fecha_fin) continue
+    const ti = new Date(t.fecha_inicio)
+    const tf = new Date(t.fecha_fin)
+    if (!(ti < d1 && tf > d0)) continue
+    const desdeAntes = ti < d0
+    const hastaDespues = tf > d1
+    const ini = desdeAntes ? 0 : minutosLocales(ti)
+    let fin = hastaDespues ? MIN_DIA : minutosLocales(tf)
+    if (fin <= ini) fin = Math.min(ini + 30, MIN_DIA)
+    segs.push({ turno: t, ini, fin, desdeAntes, hastaDespues, carril: 0, carriles: 1 })
+  }
+  segs.sort((a, b) => a.ini - b.ini || b.fin - a.fin)
+  let grupo: Segmento[] = []
+  let finGrupo = -1
+  let finCarril: number[] = []
+  const cerrar = () => {
+    grupo.forEach((x) => (x.carriles = finCarril.length))
+    grupo = []
+    finCarril = []
+  }
+  for (const s of segs) {
+    if (grupo.length && s.ini >= finGrupo) cerrar()
+    let c = finCarril.findIndex((f) => f <= s.ini)
+    if (c === -1) {
+      c = finCarril.length
+      finCarril.push(s.fin)
+    } else {
+      finCarril[c] = s.fin
+    }
+    s.carril = c
+    grupo.push(s)
+    finGrupo = Math.max(finGrupo, s.fin)
+  }
+  cerrar()
+  return segs
+}
+
 export default function CalendarioSemanal({ data, yo, usuarios }: Props) {
   const esMovil = useEsMovil()
   // Fecha "ancla": cualquier día de lo que se está viendo. La semana se deriva de ella.
@@ -119,28 +178,6 @@ export default function CalendarioSemanal({ data, yo, usuarios }: Props) {
   async function guardarEditado(id: string, patch: Partial<Turno>) {
     await data.actualizarTurno(id, patch)
     setEditando(null)
-  }
-
-  // Instantes [ini, fin) de una franja trasladada al día de la celda.
-  // franjasDelDia() genera las franjas sobre la fecha de hoy, así que hay que
-  // reubicarlas; la última franja (23:30–24:00) acaba en el día siguiente.
-  function limitesFranja(dia: Date, franjaInicio: Date, franjaFin: Date): [number, number] {
-    const ini = new Date(dia)
-    ini.setHours(franjaInicio.getHours(), franjaInicio.getMinutes(), 0, 0)
-    const fin = new Date(dia)
-    fin.setHours(franjaFin.getHours(), franjaFin.getMinutes(), 0, 0)
-    if (fin <= ini) fin.setDate(fin.getDate() + 1)
-    return [ini.getTime(), fin.getTime()]
-  }
-
-  function turnosEnFranja(dia: Date, franjaInicio: Date, franjaFin: Date): Turno[] {
-    const [iniMs, finMs] = limitesFranja(dia, franjaInicio, franjaFin)
-    return turnos.filter((t) => {
-      if (!t.fecha_inicio || !t.fecha_fin) return false
-      const tIni = new Date(t.fecha_inicio).getTime()
-      const tFin = new Date(t.fecha_fin).getTime()
-      return tIni < finMs && iniMs < tFin
-    })
   }
 
   function diaTieneTurnos(dia: Date): boolean {
@@ -267,18 +304,22 @@ export default function CalendarioSemanal({ data, yo, usuarios }: Props) {
             gridTemplateColumns: `${esMovil ? 48 : 60}px repeat(${diasVisibles.length}, minmax(${
               vista === 'semana' ? 64 : 0
             }px, 1fr))`,
+            gridTemplateRows: `auto repeat(${NUM_FRANJAS}, ${esMovil ? 44 : 32}px)`,
             gap: '1px',
             background: '#30363d',
           }}
         >
           <div
             data-testid="cal-cabecera"
-            style={{ ...headerCell, position: 'sticky', top: 0, left: 0, zIndex: 3 }}
+            style={{ ...headerCell, gridRow: 1, gridColumn: 1, position: 'sticky', top: 0, left: 0, zIndex: 4 }}
           >
             Hora
           </div>
-          {diasVisibles.map((d) => (
-            <div key={d.getTime()} style={{ ...headerCell, position: 'sticky', top: 0, zIndex: 2 }}>
+          {diasVisibles.map((d, i) => (
+            <div
+              key={d.getTime()}
+              style={{ ...headerCell, gridRow: 1, gridColumn: i + 2, position: 'sticky', top: 0, zIndex: 3 }}
+            >
               {nombreDia(d)}
               <br />
               <small style={{ color: '#888' }}>{formatFechaCorta(d)}</small>
@@ -286,15 +327,24 @@ export default function CalendarioSemanal({ data, yo, usuarios }: Props) {
           ))}
 
           {franjas.map((franja, idxFila) => (
-            <RowFranja
+            <FilaHoras
               key={idxFila}
               franja={franja}
+              fila={idxFila + 2}
               dias={diasVisibles}
-              turnosEnFranja={turnosEnFranja}
+              onClickVacio={(dia) => abrirCreacion(dia, franja.inicio.getHours(), franja.inicio.getMinutes())}
+            />
+          ))}
+
+          {diasVisibles.map((dia, i) => (
+            <ColumnaTurnos
+              key={dia.getTime()}
+              dia={dia}
+              columna={i + 2}
+              segmentos={segmentosDelDia(dia, turnos)}
               mapaNombre={mapaNombre}
               yo={yo}
               movil={esMovil}
-              onClickVacio={(dia) => abrirCreacion(dia, franja.inicio.getHours(), franja.inicio.getMinutes())}
               onClickTurno={(t) => {
                 setEditando(t)
                 setCreando(null)
@@ -323,27 +373,21 @@ export default function CalendarioSemanal({ data, yo, usuarios }: Props) {
   )
 }
 
-function RowFranja({
+// Etiqueta de hora y celdas vacías de una franja. Las celdas solo sirven para crear
+// turnos; los turnos se dibujan aparte, encima, en ColumnaTurnos.
+function FilaHoras({
   franja,
+  fila,
   dias,
-  turnosEnFranja,
-  mapaNombre,
-  yo,
-  movil,
   onClickVacio,
-  onClickTurno,
 }: {
   franja: { inicio: Date; fin: Date; label: string }
+  fila: number
   dias: Date[]
-  turnosEnFranja: (dia: Date, fIni: Date, fFin: Date) => Turno[]
-  mapaNombre: Map<string, string>
-  yo: Usuario
-  movil: boolean
   onClickVacio: (dia: Date) => void
-  onClickTurno: (t: Turno) => void
 }) {
   const hhmm = claveHora(franja.inicio)
-  // Las horas en punto llevan la etiqueta; las medias, más discretas.
+  // Las horas en punto llevan la etiqueta más marcada; las medias, más discretas.
   const enPunto = franja.inicio.getMinutes() === 0
   return (
     <>
@@ -351,76 +395,116 @@ function RowFranja({
         data-testid={`hora-${hhmm}`}
         style={{
           ...bodyCell,
+          gridRow: fila,
+          gridColumn: 1,
           position: 'sticky',
           left: 0,
-          zIndex: 1,
+          zIndex: 2,
           fontSize: '0.75rem',
           color: enPunto ? '#aaa' : '#666',
-          minHeight: movil ? 44 : 32,
         }}
       >
         {franja.label}
       </div>
-      {dias.map((dia) => {
-        const t = turnosEnFranja(dia, franja.inicio, franja.fin)
+      {dias.map((dia, i) => (
+        <div
+          key={dia.getTime()}
+          onClick={() => onClickVacio(dia)}
+          data-testid={`celda-${claveDia(dia)}-${hhmm}`}
+          style={{
+            ...bodyCell,
+            gridRow: fila,
+            gridColumn: i + 2,
+            minWidth: 0,
+            cursor: 'pointer',
+            borderTop: enPunto ? '1px solid #30363d' : '1px dashed #21262d',
+          }}
+        />
+      ))}
+    </>
+  )
+}
+
+// Capa de turnos de un día: un bloque por turno, posicionado por minutos exactos y con
+// la altura de su duración. La capa no captura clics; solo los bloques.
+function ColumnaTurnos({
+  dia,
+  columna,
+  segmentos,
+  mapaNombre,
+  yo,
+  movil,
+  onClickTurno,
+}: {
+  dia: Date
+  columna: number
+  segmentos: Segmento[]
+  mapaNombre: Map<string, string>
+  yo: Usuario
+  movil: boolean
+  onClickTurno: (t: Turno) => void
+}) {
+  const pct = (min: number) => `${(min / MIN_DIA) * 100}%`
+  return (
+    <div
+      data-testid={`col-${claveDia(dia)}`}
+      style={{
+        gridColumn: columna,
+        gridRow: `2 / span ${NUM_FRANJAS}`,
+        position: 'relative',
+        zIndex: 1,
+        pointerEvents: 'none',
+        minWidth: 0,
+      }}
+    >
+      {segmentos.map((seg) => {
+        const t = seg.turno
+        const nombres = t.usuario_ids.map((id) => mapaNombre.get(id) ?? '?').join(', ')
+        const horas = `${seg.desdeAntes ? '↑ ' : ''}${formatHora(new Date(t.fecha_inicio))}–${formatHora(
+          new Date(t.fecha_fin),
+        )}${seg.hastaDespues ? ' ↓' : ''}`
+        const corto = seg.fin - seg.ini <= 30
         return (
-          <div
-            key={dia.getTime()}
-            onClick={() => {
-              if (t.length === 0) onClickVacio(dia)
-            }}
-            data-testid={`celda-${claveDia(dia)}-${hhmm}`}
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => onClickTurno(t)}
+            title={`${new Date(t.fecha_inicio).toLocaleString()} → ${new Date(t.fecha_fin).toLocaleString()}`}
+            data-testid={`turno-${t.id}`}
             style={{
-              ...bodyCell,
-              minHeight: movil ? 44 : 32,
-              minWidth: 0,
-              cursor: t.length === 0 ? 'pointer' : 'default',
-              borderTop: enPunto ? '1px solid #30363d' : '1px dashed #21262d',
+              position: 'absolute',
+              top: `calc(${pct(seg.ini)} + 1px)`,
+              height: `calc(${pct(seg.fin - seg.ini)} - 2px)`,
+              minHeight: 20,
+              left: `calc(${(seg.carril * 100) / seg.carriles}% + 1px)`,
+              width: `calc(${100 / seg.carriles}% - 2px)`,
+              boxSizing: 'border-box',
+              pointerEvents: 'auto',
+              display: 'flex',
+              flexDirection: corto ? 'row' : 'column',
+              alignItems: corto ? 'center' : 'flex-start',
+              gap: corto ? 6 : 0,
+              padding: movil ? '4px 8px' : '2px 6px',
+              fontSize: movil ? '0.85rem' : '0.75rem',
+              lineHeight: 1.25,
+              background: t.usuario_ids.includes(yo.id) ? '#1f6feb' : '#238636',
+              color: '#fff',
+              border: '1px solid rgba(255,255,255,0.25)',
+              borderRadius: 4,
+              textAlign: 'left',
+              overflow: 'hidden',
             }}
           >
-            {t.map((turno) => (
-              <button
-                key={turno.id}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onClickTurno(turno)
-                }}
-                title={`${new Date(turno.fecha_inicio).toLocaleString()} → ${new Date(
-                  turno.fecha_fin,
-                ).toLocaleString()}`}
-                data-testid={`turno-${turno.id}`}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  padding: movil ? '6px 8px' : '2px 4px',
-                  marginBottom: 2,
-                  fontSize: movil ? '0.85rem' : '0.7rem',
-                  background: turno.usuario_ids.includes(yo.id) ? '#1f6feb' : '#238636',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 3,
-                  textAlign: 'left',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {turno.usuario_ids
-                  .map((id) => mapaNombre.get(id) ?? '?')
-                  .join(', ')}
-                {dias.length === 1 && (
-                  <small style={{ opacity: 0.8 }}>
-                    {' · '}
-                    {formatHora(new Date(turno.fecha_inicio))}–{formatHora(new Date(turno.fecha_fin))}
-                  </small>
-                )}
-              </button>
-            ))}
-          </div>
+            <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
+              {nombres}
+            </span>
+            <small style={{ opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+              {horas}
+            </small>
+          </button>
         )
       })}
-    </>
+    </div>
   )
 }
 

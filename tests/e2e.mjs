@@ -131,8 +131,10 @@ async function main() {
   const idxGlobal = franjaIdx * 7 + diaIdx
   const targetTestId = allCeldas[idxGlobal]
   console.log(`    target celda: ${targetTestId} (idx=${idxGlobal})`)
+  // Los turnos se dibujan en una capa por día (col-YYYY-MM-DD), no dentro de las celdas.
+  const diaObjetivo = targetTestId.match(/^celda-(\d{4}-\d{2}-\d{2})-/)[1]
 
-  const previos = await page.locator(`[data-testid="${targetTestId}"] [data-testid^="turno-"]`).count()
+  const previos = await page.locator(`[data-testid="col-${diaObjetivo}"] [data-testid^="turno-"]`).count()
   check('celda destino vacía antes de crear', previos === 0, `${previos} turno(s) previos`)
   await page.locator(`[data-testid="${targetTestId}"]`).click()
   await page.waitForSelector('[data-testid="modal"]', { timeout: 5000 })
@@ -165,28 +167,24 @@ async function main() {
   // Esperamos a que la suscripción onTurnosChange actualice el DOM. Firestore puede tardar.
   await page.waitForFunction(
     () => {
-      const celdas = document.querySelectorAll('[data-testid^="celda-"]')
-      for (const c of celdas) {
-        if (c.querySelector('[data-testid^="turno-"]')) return true
-      }
-      return false
+      return document.querySelectorAll('[data-testid^="turno-"]').length > 0
     },
     { timeout: 15000 },
   ).catch(() => {})
   // El turno debe aparecer como un botón dentro de la celda objetivo.
   const turnosEnCelda = await page
-    .locator(`[data-testid="${targetTestId}"] [data-testid^="turno-"]`)
+    .locator(`[data-testid="col-${diaObjetivo}"] [data-testid^="turno-"]`)
     .count()
-  check('turno visible en la celda', turnosEnCelda >= 1, `${turnosEnCelda} turno(s) en celda ${targetTestId}`)
+  check('turno visible en la celda', turnosEnCelda >= 1, `${turnosEnCelda} turno(s) en el día ${diaObjetivo}`)
 
   // Limpieza: borramos por la UI el turno que hemos creado (el calendario vuelve a la
   // semana actual al cambiar de pestaña, así que hay que hacerlo antes).
-  await page.locator(`[data-testid="${targetTestId}"] [data-testid^="turno-"]`).first().click()
+  await page.locator(`[data-testid="col-${diaObjetivo}"] [data-testid^="turno-"]`).first().click()
   await page.waitForSelector('[data-testid="modal-eliminar"]', { timeout: 5000 })
   await page.click('[data-testid="modal-eliminar"]')
   await page.waitForSelector('[data-testid="modal"]', { state: 'detached', timeout: 5000 })
   await page.waitForTimeout(1500)
-  const turnosTrasBorrar = await page.locator(`[data-testid="${targetTestId}"] [data-testid^="turno-"]`).count()
+  const turnosTrasBorrar = await page.locator(`[data-testid="col-${diaObjetivo}"] [data-testid^="turno-"]`).count()
   check('turno se elimina desde el modal', turnosTrasBorrar === 0, `${turnosTrasBorrar} restantes`)
 
   // ============== TEST 7: Crear nota-alerta ==============
